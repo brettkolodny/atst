@@ -8,7 +8,7 @@ import (
 	"strings"
 	"syscall"
 
-	atst "atst/pkg/atst"
+	atst "github.com/brettkolodny/atst/pkg/atst"
 
 	"github.com/urfave/cli/v2"
 )
@@ -33,7 +33,6 @@ func main() {
 				ch := atst.Start(cliCtx.Args().Slice())
 
 				for v := range ch {
-
 					fmt.Printf("[%d]: %s\n", v.Index, strings.TrimRight(v.Msg, "\n\r"))
 				}
 

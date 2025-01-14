@@ -20,9 +20,10 @@ func Start(programs []string) chan Output {
 	ch := make(chan Output)
 
 	for index, program := range programs {
+		wg.Add(1)
+
 		go func() {
 			defer wg.Done()
-			wg.Add(1)
 
 			args := strings.Split(program, " ")
 			cmd := exec.Command(args[0], args[1:]...)
