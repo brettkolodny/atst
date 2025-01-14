@@ -4,45 +4,71 @@ import (
 	"bufio"
 	"fmt"
 	"os/exec"
+	"strings"
 	"sync"
 )
 
-type Manager = struct {
-	programs []chan struct{}
+type Output = struct {
+	Command string
+	Index   int
+	Msg     string
 }
 
-func StartManager(programs []string) {
+func Start(programs []string) chan Output {
 	var wg sync.WaitGroup
 
-	for index, program := range programs {
-		wg.Add(1)
+	ch := make(chan Output)
 
+	for index, program := range programs {
 		go func() {
 			defer wg.Done()
+			wg.Add(1)
 
-			cmd := exec.Command(program)
+			args := strings.Split(program, " ")
+			cmd := exec.Command(args[0], args[1:]...)
 
 			stdout, err := cmd.StdoutPipe()
 			if err != nil {
-				fmt.Printf("[%d]: %s\n", index, err)
+				ch <- Output{
+					Command: program,
+					Index:   index,
+					Msg:     fmt.Sprintf("%s\n", err),
+				}
 				return
 			}
 
 			if err := cmd.Start(); err != nil {
-				fmt.Printf("[%d]: %s\n", index, err)
+				ch <- Output{
+					Command: program,
+					Index:   index,
+					Msg:     fmt.Sprintf("%s\n", err),
+				}
 				return
 			}
 
 			scanner := bufio.NewScanner(stdout)
 			for scanner.Scan() {
-				fmt.Printf("[%d]: %s\n", index, scanner.Text())
+				ch <- Output{
+					Command: program,
+					Index:   index,
+					Msg:     scanner.Text(),
+				}
 			}
 
 			if err := cmd.Wait(); err != nil {
-				fmt.Printf("[%d]: %s\n", index, err)
+				ch <- Output{
+					Command: program,
+					Index:   index,
+					Msg:     fmt.Sprintf("%s\n", err),
+				}
 			}
 		}()
 	}
 
-	wg.Wait()
+	go func() {
+		defer close(ch)
+		wg.Wait()
+	}()
+
+	return ch
 }
