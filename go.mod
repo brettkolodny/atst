@@ -1,4 +1,4 @@
-module atst
+module github.com/brettkolodny/atst
 
 go 1.22.10
 
