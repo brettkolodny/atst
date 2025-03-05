@@ -3,18 +3,23 @@ package atst
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os/exec"
-	"strings"
 	"sync"
 )
 
-type Output = struct {
+type Output struct {
 	Command string
 	Index   int
 	Msg     string
 }
 
-func Start(programs []string) chan Output {
+type Program struct {
+	Exec string
+	Args []string
+}
+
+func Start(programs []Program) chan Output {
 	var wg sync.WaitGroup
 
 	ch := make(chan Output)
@@ -25,13 +30,22 @@ func Start(programs []string) chan Output {
 		go func() {
 			defer wg.Done()
 
-			args := strings.Split(program, " ")
-			cmd := exec.Command(args[0], args[1:]...)
+			cmd := exec.Command(program.Exec, program.Args...)
 
 			stdout, err := cmd.StdoutPipe()
 			if err != nil {
 				ch <- Output{
-					Command: program,
+					Command: program.Exec,
+					Index:   index,
+					Msg:     fmt.Sprintf("%s\n", err),
+				}
+				return
+			}
+
+			stderr, err := cmd.StderrPipe()
+			if err != nil {
+				ch <- Output{
+					Command: program.Exec,
 					Index:   index,
 					Msg:     fmt.Sprintf("%s\n", err),
 				}
@@ -40,25 +54,31 @@ func Start(programs []string) chan Output {
 
 			if err := cmd.Start(); err != nil {
 				ch <- Output{
-					Command: program,
+					Command: program.Exec,
 					Index:   index,
 					Msg:     fmt.Sprintf("%s\n", err),
 				}
 				return
 			}
 
-			scanner := bufio.NewScanner(stdout)
-			for scanner.Scan() {
-				ch <- Output{
-					Command: program,
-					Index:   index,
-					Msg:     scanner.Text(),
+			writeFromScanner := func(reader io.Reader) {
+				scanner := bufio.NewScanner(reader)
+				for scanner.Scan() {
+					ch <- Output{
+						Command: program.Exec,
+						Index:   index,
+						Msg:     scanner.Text(),
+					}
 				}
+
 			}
+
+			go writeFromScanner(stdout)
+			go writeFromScanner(stderr)
 
 			if err := cmd.Wait(); err != nil {
 				ch <- Output{
-					Command: program,
+					Command: program.Exec,
 					Index:   index,
 					Msg:     fmt.Sprintf("%s\n", err),
 				}

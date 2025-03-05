@@ -1,13 +1,12 @@
 #!/usr/bin/env -S deno run --allow-write
+import { Hono } from "npm:hono";
 
 Deno.addSignalListener("SIGINT", () => {
   console.log("Launch aborted!");
   Deno.exit(1);
 });
 
-const countDown = async () => {
-  let count = 10;
-
+const countDown = async (count: number) => {
   while (count > 0) {
     console.log(`Blast off in ${count}...`);
     await new Promise((r) => setTimeout(r, 1000));
@@ -27,9 +26,17 @@ const countUp = async () => {
   }
 };
 
+const startServer = () => {
+  const app = new Hono();
+  Deno.serve({ port: 8080 }, app.fetch);
+};
+
 const main = async () => {
-  if (Deno.args[0] === "countdown") {
-    await countDown();
+  if (Deno.args[0] === "--countdown" || "-cd") {
+    const count = parseInt(Deno.args[1]);
+    await countDown(count || 0);
+  } else if (Deno.args[0] === "server") {
+    startServer();
   } else {
     await countUp();
   }
