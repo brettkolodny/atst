@@ -31,56 +31,74 @@ func main() {
 			},
 		},
 		Action: func(cliCtx *cli.Context) error {
-			_, cancel := context.WithCancel((cliCtx.Context))
+			// Create a cancellable context
+			ctx, cancel := context.WithCancel(cliCtx.Context)
 			defer cancel()
 
+			// Set up signal handling
 			sigChan := make(chan os.Signal, 1)
 			signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-			done := make(chan bool)
+			// Parse command line arguments
+			programs := parsePrograms(os.Args)
+			if len(programs) == 0 {
+				return fmt.Errorf("no programs specified")
+			}
 
+			// Start a goroutine to handle signals
 			go func() {
-				defer close(done)
-
-				programs := parsePrograms(os.Args)
-
-				ch := make(chan atst.Output)
-				a := atst.Start(programs)
-
-				go func() {
-					a.Wait()
-					os.Exit(0)
-				}()
-
-				for _, outputCh := range a.Outputs {
-					go func() {
-						for v := range outputCh {
-							ch <- v
-						}
-					}()
-				}
-
-				for v := range ch {
-					fmt.Printf("[%d]: %s\n", v.Index, strings.TrimRight(v.Msg, "\n\r"))
-				}
-
-				done <- true
+				sig := <-sigChan
+				fmt.Printf("\nReceived signal: %v\n", sig)
+				cancel() // Signal all processes to terminate
 			}()
 
-			for !<-done {
-				select {
-				case sig := <-sigChan:
-					if sig == syscall.SIGINT {
-						cancel()
+			// Start all programs
+			a := atst.Start(programs)
+
+			// Merge all output channels into one
+			outputCh := make(chan atst.Output)
+			for _, ch := range a.Outputs {
+				go func(ch chan atst.Output) {
+					for output := range ch {
+						select {
+						case outputCh <- output:
+						case <-ctx.Done():
+							return
+						}
 					}
+				}(ch)
+			}
+
+			// Handle program output
+			go func() {
+				for output := range outputCh {
+					fmt.Printf("[%d]: %s\n", output.Index, strings.TrimRight(output.Msg, "\n\r"))
 				}
+			}()
+
+			// Wait for programs to complete or context to be cancelled
+			done := make(chan struct{})
+			go func() {
+				a.Wait()
+				close(done)
+			}()
+
+			// Wait for either completion or cancellation
+			select {
+			case <-done:
+				fmt.Println("All programs completed")
+			case <-ctx.Done():
+				fmt.Println("Shutting down...")
 			}
 
 			return nil
 		},
 	}
 
-	app.Run(os.Args)
+	if err := app.Run(os.Args); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 func parsePrograms(args []string) []atst.Program {
