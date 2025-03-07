@@ -43,9 +43,22 @@ func main() {
 				defer close(done)
 
 				programs := parsePrograms(os.Args)
-				fmt.Printf("%v\n", programs)
 
-				ch := atst.Start(programs)
+				ch := make(chan atst.Output)
+				a := atst.Start(programs)
+
+				go func() {
+					a.Wait()
+					os.Exit(0)
+				}()
+
+				for _, outputCh := range a.Outputs {
+					go func() {
+						for v := range outputCh {
+							ch <- v
+						}
+					}()
+				}
 
 				for v := range ch {
 					fmt.Printf("[%d]: %s\n", v.Index, strings.TrimRight(v.Msg, "\n\r"))

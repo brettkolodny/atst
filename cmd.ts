@@ -14,7 +14,7 @@ const countDown = async (count: number) => {
   }
 
   console.log("Blast off! 🚀");
-  Deno.exit(1);
+  Deno.exit(0);
 };
 
 const countUp = async () => {

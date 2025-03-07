@@ -19,13 +19,25 @@ type Program struct {
 	Args []string
 }
 
-func Start(programs []Program) chan Output {
+type Atst struct {
+	Outputs []chan Output
+	wg      *sync.WaitGroup
+}
+
+func (a Atst) Wait() {
+	a.wg.Wait()
+}
+
+func Start(programs []Program) Atst {
 	var wg sync.WaitGroup
 
-	ch := make(chan Output)
+	outputChannels := []chan Output{}
 
 	for index, program := range programs {
 		wg.Add(1)
+
+		ch := make(chan Output)
+		outputChannels = append(outputChannels, ch)
 
 		go func() {
 			defer wg.Done()
@@ -86,10 +98,8 @@ func Start(programs []Program) chan Output {
 		}()
 	}
 
-	go func() {
-		defer close(ch)
-		wg.Wait()
-	}()
-
-	return ch
+	return Atst{
+		Outputs: outputChannels,
+		wg:      &wg,
+	}
 }
