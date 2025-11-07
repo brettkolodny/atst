@@ -8,6 +8,11 @@ import (
 	"sync"
 )
 
+type cmdOutput struct {
+	Index int
+	Text  string
+}
+
 func Simple(args []string) {
 	cmds := make([]*exec.Cmd, 0)
 	for _, cmdStr := range args {
@@ -22,11 +27,14 @@ func Simple(args []string) {
 		cmds = append(cmds, exec.Command(name, args...))
 	}
 
-	var wg sync.WaitGroup
+	printerDone := make(chan struct{})
+	printerCh := make(chan (*cmdOutput))
+
+	var cmdWg sync.WaitGroup
 	for index, cmd := range cmds {
-		wg.Add(1)
+		cmdWg.Add(1)
 		go func() {
-			defer wg.Done()
+			defer cmdWg.Done()
 
 			stderr, err := cmd.StderrPipe()
 			if err != nil {
@@ -52,11 +60,11 @@ func Simple(args []string) {
 			var scannerWg sync.WaitGroup
 			scannerWg.Add(2)
 			go func() {
-				writeScannerOutput(stderrScanner, index)
+				writeScannerOutput(stderrScanner, index, printerCh)
 				scannerWg.Done()
 			}()
 			go func() {
-				writeScannerOutput(stdoutScanner, index)
+				writeScannerOutput(stdoutScanner, index, printerCh)
 				scannerWg.Done()
 			}()
 			scannerWg.Wait()
@@ -69,13 +77,25 @@ func Simple(args []string) {
 		}()
 	}
 
-	wg.Wait()
+	go func() {
+		for output := range printerCh {
+			fmt.Printf("[%d] %s\n", output.Index, output.Text)
+		}
+		close(printerDone)
+	}()
+
+	cmdWg.Wait()
+	close(printerCh)
+	<-printerDone
 }
 
-func writeScannerOutput(scanner *bufio.Scanner, index int) {
+func writeScannerOutput(scanner *bufio.Scanner, index int, ch chan *cmdOutput) {
 	scanner.Split(bufio.ScanLines)
 	for scanner.Scan() {
 		out := scanner.Text()
-		fmt.Printf("[%d] %s\n", index, out)
+		ch <- &cmdOutput{
+			Index: index,
+			Text:  out,
+		}
 	}
 }
